@@ -1,56 +1,44 @@
 # doto.api
 
-.NET 10 backend for Doto, Clean Architecture across 4 projects. See the workspace root
-`../CLAUDE.md` for naming conventions and `../.claude/rules/backend-conventions.md` for the full
-conventions/guardrails this file summarizes.
+Backend do Dotô — app de controle de medicações (agendamentos, registro de doses, sinais vitais,
+sintomas e relatórios).
 
-## Stack
+**Estado atual: greenfield.** O projeto foi reiniciado do zero em 2026-07-28. Hoje existe apenas o
+esqueleto da solution — nenhuma entidade, service, controller ou migration foi escrita ainda. O
+`WeatherForecast` que veio do template é placeholder e deve ser removido assim que o primeiro
+endpoint real existir.
 
-- **.NET 10**, ASP.NET Core Web API, minimal hosting model (`Program.cs`, no `Startup.cs`).
-- **EF Core 10 + Npgsql** — Postgres hosted on Supabase. Heavy `HasConversion` usage to force UTC
-  `DateTime`/`DateTimeOffset` and map `DateOnly`/`TimeOnly`.
-- **Auth**: Supabase JWT bearer (`AddJwtBearer` validated against Supabase's issuer/JWKS), no
-  ASP.NET Identity. `ICurrentUserService` reads claims off `HttpContext.User`.
-- **SignalR** (`NotificationHub` at `/hubs/notifications`) for real-time medication reminder/taken
-  events.
-- **Swashbuckle.AspNetCore 10.x** (OpenAPI.NET v2 — types live in the `Microsoft.OpenApi` namespace,
-  not `Microsoft.OpenApi.Models`; security requirements use the
-  `document => new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference(...)] = [...] }`
-  delegate form, not the old `Reference`/`ReferenceType` pattern).
-- No test project exists yet. No MediatR/CQRS, no AutoMapper, no FluentValidation actually wired up
-  (the package is referenced but unused).
-
-## Architecture (4 projects under `src/`)
+## Estrutura
 
 ```
-Doto.Domain          entities, enums, repository interfaces — no dependencies
-Doto.Application     DTOs, service interfaces + implementations (plain service layer, not CQRS)
-Doto.Infrastructure   DotoDbContext, repositories, Supabase/auth glue, DI registration
-Doto.Api             controllers, middleware, SignalR hub, Program.cs composition root
+Doto.slnx
+src/
+  Doto.Domain/          entidades, enums, interfaces de repositório — sem dependências
+  Doto.Application/     DTOs, interfaces e implementações de service — depende de Domain
+  Doto.Infrastructure/  EF Core, repositórios, auth — depende de Domain + Application
+  Doto.Api/             controllers, middleware, Program.cs — depende de Application + Infrastructure
+reference/              ⚠️ documentação da versão anterior, ver reference/README.md
 ```
 
-Full conventions (naming, layering rules, what not to introduce) are in
-`../.claude/rules/backend-conventions.md`.
+As referências entre projetos já estão ligadas nessa direção. Manter o sentido das setas.
 
-## Request logging (doto.monitor)
+## Convenções
 
-`Middleware/RequestLoggingMiddleware.cs` mirrors every request/response to `doto.monitor` when
-`Monitor:Url` is configured in `appsettings` (empty by default = no-op, zero overhead). Secrets are
-redacted before leaving the process — see `../.claude/rules/security-guardrails.md`.
+As convenções de arquitetura, nomenclatura e guardrails vivem no workspace pai, em
+`../.claude/rules/backend-conventions.md`. Elas descrevem o alvo desta reconstrução, não o estado
+atual — vários itens ("o codebase tem X", "não renomear Y") se referem à versão anterior e só
+voltam a valer conforme o código for sendo escrito.
 
-## Known gaps (flagged, not silently fixed)
+## `reference/`
 
-- No global exception-handling middleware — each controller try/catches specific exceptions.
-- `DevPolicy` CORS allows any origin/method/header, applied unconditionally.
-- `appsettings.Development.json` has real Supabase secrets committed to git — needs rotation, see
-  `docs/DEPLOYMENT.md`.
-- Azure Web App hosting was removed; see `docs/DEPLOYMENT.md` for the migration plan to a free
-  alternative (Render recommended).
+Contém a documentação da versão anterior, preservada como **base of work**. Serve para relembrar
+decisões de modelagem e escopo funcional — **não** para copiar literalmente nem para ser tratada
+como descrição do estado atual. Ver `reference/README.md`.
 
-## Commands you'll actually run
+O código-fonte da versão anterior está no histórico do git, no commit `de59481`.
 
-```bash
-dotnet build
-dotnet ef migrations list --project src/Doto.Infrastructure --startup-project src/Doto.Api
-dotnet run --project src/Doto.Api
-```
+## Infraestrutura
+
+Ainda não há banco nem projeto de auth configurados. O Supabase da versão anterior
+(`pvtffkgbyqsqtaxntrgd`) foi deletado. Quando um novo for criado, os segredos vão em
+`dotnet user-secrets` — **não** em `appsettings.Development.json`, que é versionado.
