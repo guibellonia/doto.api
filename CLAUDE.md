@@ -3,10 +3,17 @@
 Backend do Dotô — app de controle de medicações (agendamentos, registro de doses, sinais vitais,
 sintomas e relatórios).
 
-**Estado atual: greenfield.** O projeto foi reiniciado do zero em 2026-07-28. Hoje existe apenas o
-esqueleto da solution — nenhuma entidade, service, controller ou migration foi escrita ainda. O
-`WeatherForecast` que veio do template é placeholder e deve ser removido assim que o primeiro
-endpoint real existir.
+**Estado atual: modelo de dados pronto, resto ainda greenfield.** O projeto foi reiniciado do zero
+em 2026-07-28. O primeiro plano executado (`database-model-backend-plan.md`) modelou o banco
+completo: `Doto.Domain` tem as 14 entidades ricas, 18 enums e as interfaces de repositório (só
+interfaces, sem implementação); `Doto.Infrastructure` tem `DotoDbContext`, as 14
+`IEntityTypeConfiguration` e duas migrations (`InitialCreate`, `AddAuthUsersForeignKey`) já
+aplicadas no Postgres do Supabase. Ver `docs/database-model.md` e `docs/database-model.mermaid`.
+
+Ainda **não existe** nenhum controller, service, DTO ou endpoint real — nem implementação de
+repositório, nem auth (`AddJwtBearer`/`ICurrentUserService`), nem `BaseResponse<T>`. O
+`WeatherForecast` que veio do template continua no lugar e só deve ser removido junto com o
+primeiro endpoint real.
 
 ## Estrutura
 
@@ -17,7 +24,8 @@ src/
   Doto.Application/     DTOs, interfaces e implementações de service — depende de Domain
   Doto.Infrastructure/  EF Core, repositórios, auth — depende de Domain + Application
   Doto.Api/             controllers, middleware, Program.cs — depende de Application + Infrastructure
-reference/              ⚠️ documentação da versão anterior, ver reference/README.md
+docs/                database-model.md + database-model.mermaid (modelo de dados atual)
+reference/           ⚠️ documentação da versão anterior, ver reference/README.md
 ```
 
 As referências entre projetos já estão ligadas nessa direção. Manter o sentido das setas.
@@ -39,6 +47,9 @@ O código-fonte da versão anterior está no histórico do git, no commit `de594
 
 ## Infraestrutura
 
-Ainda não há banco nem projeto de auth configurados. O Supabase da versão anterior
-(`pvtffkgbyqsqtaxntrgd`) foi deletado. Quando um novo for criado, os segredos vão em
-`dotnet user-secrets` — **não** em `appsettings.Development.json`, que é versionado.
+Há um projeto Supabase Postgres novo (`yrecrgyecunwheqodlca`) com o schema `public` já migrado —
+ver `docs/database-model.md` para a connection string (Session pooler, porta 5432) e o comando de
+`dotnet ef database update`. O Supabase da versão anterior (`pvtffkgbyqsqtaxntrgd`) continua
+deletado e é irrelevante. **Ainda não há provedor de auth configurado** — `app_users.id` já espera
+ser o `auth.users.id` do Supabase, mas `AddJwtBearer`/`ICurrentUserService` não existem. Segredos
+vão em `dotnet user-secrets` — **não** em `appsettings.Development.json`, que é versionado.

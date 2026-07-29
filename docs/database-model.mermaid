@@ -1,0 +1,255 @@
+erDiagram
+    app_users {
+        uuid id PK "= auth.users.id (Supabase). Nao gerado pelo banco"
+        uuid parent_id FK "NULL se parent, NOT NULL se child -> app_users.id"
+        varchar email UK "espelho lowercase de auth.users.email"
+        varchar username UK
+        varchar display_name
+        varchar role "enum Parent|Child"
+        varchar status "enum PendingActivation|Active|Disabled"
+        boolean must_change_password "true ate o child trocar a senha temporaria"
+        timestamptz password_changed_at "NULL"
+        date birth_date "NULL (idade e derivada)"
+        numeric weight_kg "NULL, snapshot atual (serie em vital_readings)"
+        numeric height_cm "NULL, snapshot atual"
+        varchar avatar_url "NULL"
+        varchar time_zone "IANA, default America/Sao_Paulo"
+        timestamptz created_at
+        timestamptz updated_at "NULL"
+        timestamptz deleted_at "NULL = ativo (soft delete)"
+    }
+
+    health_conditions {
+        uuid id PK
+        uuid user_id FK "-> app_users.id"
+        varchar name
+        text notes "NULL"
+        date diagnosed_on "NULL"
+        boolean is_active
+        timestamptz created_at
+        timestamptz deleted_at "NULL"
+    }
+
+    child_invites {
+        uuid id PK
+        uuid parent_user_id FK "-> app_users.id (quem convidou)"
+        uuid child_user_id FK "-> app_users.id (criado junto com o convite)"
+        varchar invited_email
+        varchar status "enum Pending|Accepted|Expired|Revoked"
+        varchar invite_token_hash "NULL. hash SHA256. senha temporaria NUNCA e persistida"
+        timestamptz temp_password_sent_at "NULL"
+        timestamptz expires_at_utc
+        timestamptz accepted_at_utc "NULL"
+        timestamptz revoked_at_utc "NULL"
+        int resent_count
+        timestamptz last_sent_at_utc "NULL"
+        timestamptz created_at
+    }
+
+    medications {
+        uuid id PK
+        uuid user_id FK "-> app_users.id. NOT NULL, nao reutilizavel entre usuarios"
+        varchar name
+        numeric dosage_value
+        varchar dosage_unit "enum Mg|G|Mcg|Ml|Drop|Tablet|Capsule|Puff|Sachet|Application|Unit"
+        text observations "NULL"
+        date treatment_start_date
+        date treatment_end_date "NULL = tratamento continuo"
+        int total_doses "NULL = indefinido"
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at "NULL"
+        timestamptz deleted_at "NULL"
+    }
+
+    medication_schedules {
+        uuid id PK
+        uuid medication_id FK "-> medications.id"
+        uuid user_id FK "-> app_users.id (denormalizado p/ filtro de acesso)"
+        varchar recurrence_type "enum SingleDose|Daily|SpecificWeekDays|Weekly|Monthly"
+        int days_of_week "bitmask 0..127, bit0=domingo. Usado em SpecificWeekDays|Weekly"
+        smallint day_of_month "1..31, NULL fora de Monthly. Clamp p/ ultimo dia do mes"
+        time anchor_time "NULL. horario da 1a dose do dia"
+        smallint interval_minutes "NULL. intervalo no dia (intencao declarada)"
+        smallint min_interval_minutes "NULL. piso clinico usado no reajuste"
+        smallint doses_per_day
+        smallint late_grace_minutes "apos isso a dose vira Missed"
+        date start_date
+        date end_date "NULL"
+        int generation_version "incrementa a cada reajuste"
+        date generated_through_date "horizonte ja materializado (rolling 60d)"
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at "NULL"
+        timestamptz deleted_at "NULL"
+    }
+
+    schedule_time_slots {
+        uuid id PK
+        uuid schedule_id FK "-> medication_schedules.id (cascade)"
+        time time_of_day "hora local de parede"
+        smallint slot_order
+    }
+
+    dose_occurrences {
+        uuid id PK
+        uuid user_id FK "-> app_users.id (denormalizado, filtro de acesso)"
+        uuid medication_id FK "-> medications.id (denormalizado)"
+        uuid schedule_id FK "-> medication_schedules.id"
+        date scheduled_local_date "FONTE DA VERDADE do dia previsto"
+        time scheduled_local_time "FONTE DA VERDADE do horario previsto"
+        timestamptz scheduled_at_utc "cache derivado de (local + time_zone do user)"
+        timestamptz original_scheduled_at_utc "previsto de origem, imutavel"
+        varchar status "enum Pending|Taken|Skipped|Missed|Cancelled|Superseded"
+        timestamptz taken_at_utc "NULL. horario REAL da tomada"
+        int delay_minutes "NULL. real - previsto, persistido p/ relatorio"
+        boolean is_retroactive "marcada depois do fato"
+        uuid recorded_by_user_id FK "NULL. parent pode registrar dose do child"
+        varchar record_source "enum Patient|Caregiver|System"
+        int occurrence_index "ordem dentro do schedule"
+        int generation_version "versao da regra que gerou esta linha"
+        uuid superseded_by_occurrence_id FK "NULL. -> dose_occurrences.id"
+        text notes "NULL"
+        timestamptz created_at
+    }
+
+    schedule_adjustments {
+        uuid id PK
+        uuid schedule_id FK "-> medication_schedules.id"
+        uuid triggered_by_occurrence_id FK "NULL. -> dose_occurrences.id"
+        varchar reason "enum LateIntake|EarlyIntake|SkippedDose|ScheduleEdited|TimeZoneChanged|ManualReschedule"
+        int shift_minutes "deslocamento aplicado"
+        date effective_from_date
+        int occurrences_affected
+        int previous_generation_version
+        int new_generation_version
+        uuid applied_by_user_id FK "NULL. -> app_users.id"
+        timestamptz applied_at_utc
+        text notes "NULL"
+    }
+
+    symptom_records {
+        uuid id PK
+        uuid user_id FK "-> app_users.id"
+        varchar name
+        smallint severity "NULL. escala 0..10"
+        varchar trend "enum Improved|Unchanged|Worsened|Unknown"
+        int duration_minutes "NULL"
+        timestamptz recorded_at_utc
+        date recorded_local_date
+        time recorded_local_time
+        text notes "NULL"
+        timestamptz created_at
+        timestamptz deleted_at "NULL"
+    }
+
+    vital_readings {
+        uuid id PK
+        uuid user_id FK "-> app_users.id"
+        varchar type "enum BloodPressure|BloodGlucose|Weight|Height|HeartRate|BodyTemperature|OxygenSaturation|RespiratoryRate"
+        numeric value_primary "sistolica | glicose | peso | bpm ..."
+        numeric value_secondary "NULL. diastolica; obrigatoria sse type=BloodPressure"
+        varchar unit "mmHg | mg/dL | kg | cm | bpm | C | pct | rpm"
+        varchar context "enum NotApplicable|Fasting|PostMeal|BeforeSleep|AfterExercise|Random"
+        timestamptz measured_at_utc
+        date measured_local_date
+        time measured_local_time
+        text notes "NULL"
+        timestamptz created_at
+        timestamptz deleted_at "NULL"
+    }
+
+    devices {
+        uuid id PK
+        uuid user_id FK "-> app_users.id"
+        varchar push_token UK "unique GLOBAL: re-registro reatribui o user_id"
+        varchar platform "enum Ios|Android|Web"
+        varchar device_name "NULL"
+        varchar app_version "NULL"
+        timestamptz last_seen_at_utc "NULL"
+        boolean is_active
+        timestamptz created_at
+        timestamptz deleted_at "NULL"
+    }
+
+    notification_preferences {
+        uuid id PK
+        uuid subject_user_id FK "-> app_users.id (de quem sao os eventos)"
+        uuid recipient_user_id FK "-> app_users.id (quem recebe; parent pode ser o destino)"
+        uuid medication_id FK "NULL = preferencia default do usuario"
+        varchar kind "enum DoseReminder|MissedDoseAlert|CaregiverMissedDoseAlert|VitalsReminder|InviteAccepted|ReportReady"
+        boolean enabled
+        smallint lead_minutes "antecedencia do lembrete"
+        smallint repeat_interval_minutes "NULL"
+        smallint max_repeats "NULL"
+        time quiet_hours_start "NULL. hora local"
+        time quiet_hours_end "NULL. hora local"
+        varchar channel "enum Push|InApp|Both"
+        timestamptz created_at
+        timestamptz updated_at "NULL"
+        timestamptz deleted_at "NULL"
+    }
+
+    notification_deliveries {
+        uuid id PK
+        uuid recipient_user_id FK "-> app_users.id"
+        uuid device_id FK "NULL. -> devices.id"
+        uuid notification_preference_id FK "NULL. -> notification_preferences.id"
+        uuid dose_occurrence_id FK "NULL. -> dose_occurrences.id (SetNull)"
+        varchar kind
+        timestamptz scheduled_for_utc
+        timestamptz sent_at_utc "NULL"
+        varchar status "enum Scheduled|Sent|Delivered|Failed|Cancelled|Acknowledged"
+        int attempt_count
+        varchar provider_message_id "NULL"
+        text error_message "NULL"
+        jsonb payload "NULL. sem segredos"
+        timestamptz created_at
+    }
+
+    report_exports {
+        uuid id PK
+        uuid requested_by_user_id FK "-> app_users.id (pode ser o parent)"
+        uuid subject_user_id FK "-> app_users.id (de quem e o dado)"
+        varchar report_type "enum PhysicalState|MedicationsTaken|Adherence|Complete"
+        date period_start
+        date period_end
+        varchar status "enum Pending|Completed|Failed"
+        varchar file_name "NULL"
+        varchar storage_path "NULL"
+        timestamptz generated_at_utc "NULL"
+        text error_message "NULL"
+        timestamptz created_at
+    }
+
+    app_users ||--o{ app_users : "e parent de (profundidade fixa 2)"
+    app_users ||--o{ health_conditions : "declara"
+    app_users ||--o{ child_invites : "envia como parent"
+    app_users |o--o| child_invites : "e o child convidado em"
+    app_users ||--o{ medications : "possui"
+    app_users ||--o{ medication_schedules : "sujeito de"
+    app_users ||--o{ dose_occurrences : "sujeito de"
+    app_users |o--o{ dose_occurrences : "registrou (parent ou proprio)"
+    app_users |o--o{ schedule_adjustments : "aplicou"
+    app_users ||--o{ symptom_records : "registra"
+    app_users ||--o{ vital_readings : "registra"
+    app_users ||--o{ devices : "usa"
+    app_users ||--o{ notification_preferences : "e sujeito de"
+    app_users ||--o{ notification_preferences : "e destinatario de"
+    app_users ||--o{ notification_deliveries : "recebe"
+    app_users ||--o{ report_exports : "solicita"
+    app_users ||--o{ report_exports : "e sujeito de"
+
+    medications ||--o{ medication_schedules : "tem regra de recorrencia"
+    medications |o--o{ notification_preferences : "override por medicacao"
+
+    medication_schedules ||--o{ schedule_time_slots : "horarios do dia"
+    medication_schedules ||--o{ dose_occurrences : "materializa"
+    medication_schedules ||--o{ schedule_adjustments : "foi reajustada por"
+
+    dose_occurrences |o--o{ schedule_adjustments : "disparou"
+    dose_occurrences |o--o| dose_occurrences : "substituida por (superseded_by)"
+    dose_occurrences |o--o{ notification_deliveries : "gera envio"
+
+    devices |o--o{ notification_deliveries : "destino do envio"
+    notification_preferences |o--o{ notification_deliveries : "originou"
